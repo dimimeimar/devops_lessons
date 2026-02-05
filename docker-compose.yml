@@ -1,0 +1,63 @@
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: appointments-db
+    environment:
+      MYSQL_ROOT_PASSWORD: $$jimpms2025$$
+      MYSQL_DATABASE: appointments_db
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p$$jimpms2025$$"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - app-network
+            
+  backend:
+    build: 
+      context: ./appointments
+      dockerfile: Dockerfile
+    container_name: appointments-backend
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/appointments_db
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: $$jimpms2025$$
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_MAIL_HOST: smtp.gmail.com
+      SPRING_MAIL_PORT: 587
+      SPRING_MAIL_USERNAME: appointmentssystem2025@gmail.com
+      SPRING_MAIL_PASSWORD: "ywom kacp dmqm fjgp"
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_AUTH: "true"
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE: "true"
+    ports:
+      - "8080:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - app-network
+    
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: appointments-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - app-network
+    
+volumes:
+  mysql-data:
+    
+networks:
+  app-network:
+    driver: bridge

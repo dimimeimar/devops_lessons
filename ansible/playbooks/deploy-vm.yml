@@ -1,0 +1,174 @@
+---
+  - name: Deploy appointments system on vm (bare metal)
+    hosts: vm_hosts
+    become: yes
+    gather_facts: yes
+
+    vars:
+      project_dir: /opt/appointments
+      java_version: 17
+
+    tasks:
+      - name: Update apt cache
+        apt:
+          update_cache: yes
+        when: ansible_os_family == "Debian"
+
+      - name: Install maven
+        apt:
+          name: maven
+          state: present
+        when: ansible_os_family == "Debian"
+
+      - name: Install Node.js and npm
+        apt:
+          name:
+            - nodejs
+            - npm
+          state: present
+        when: ansible_os_family == "Debian"
+
+      - name: Install mysql server
+        apt:
+          name: mysql-server
+          state: present
+        when: ansible_os_family == "Debian"
+
+      - name: Start mySQL service
+        service:
+          name: mysql
+          state: started
+          enabled: yes
+
+      - name: install python mysql module
+        apt:
+          name: python3-pymysql
+          state: present
+        when: ansible_os_family == "Debian"
+
+      - name: create mysql database
+        community.mysql.mysql_db:
+          name: appointments_db
+          state: present
+          login_unix_socket: /var/run/mysqld/mysqld.sock
+
+      - name: set mysql root password
+        community.mysql.mysql_user:
+          name: root
+          password: "$$jimpms2025$$"
+          login_unix_socket: /var/run/mysqld/mysqld.sock
+          host_all: yes
+          state: present
+
+      - name: create project directory
+        file:
+          path: "{{ project_dir }}"
+          state: directory
+          mode: '0755'
+
+      - name: copy backend files
+        copy:
+          src: "{{ playbook_dir }}/../../appointments/"
+          dest: "{{ project_dir }}/backend/"
+          mode: '0755'
+
+      - name: build backend with maven
+        command: mvn clean package -DskipTests
+        args:
+          chdir: "{{ project_dir }}/backend"
+        environment:
+          JAVA_HOME: /usr/lib/jvm/java-17-openjdk-arm64
+
+      - name: copy frontend files
+        copy:
+          src: "{{ playbook_dir }}/../../frontend/"
+          dest: "{{ project_dir }}/frontend/"
+          mode: '0775'
+
+      - name: install frontend dependencies
+        command: npm install
+        args:
+          chdir: "{{ project_dir }}/frontend"
+
+      - name: build frontend
+        command: npm run build
+        args:
+          chdir: "{{ project_dir }}/frontend"
+
+      - name: install nginx
+        apt:
+          name: nginx
+          state: present
+        when: ansible_os_family == "Debian"
+
+      - name: configure nginx for frontend
+        copy:
+          dest: /etc/nginx/sites-available/appointments
+          content: |
+            server {
+              listen 80;
+              server_name localhost;
+              root {{ project_dir }}/frontend/build;
+              index index.html;
+
+              location / {
+               try_files $uri $uri/ /index.html;
+              }
+
+              location /api {
+                proxy_pass http://localhost:8080;
+                proxy_http_version 1.1;
+                proxy_set_header Upgrade $http_upgrade;
+                proxy_set_header Connection 'upgrade';
+                proxy_set_header Host $host;
+                proxy_cache_bypass $http_upgrade;
+              }
+            }
+
+      - name: Enable Ngix site
+        file:
+          src: /etc/nginx/sites-available/appointments
+          dest: /etc/nginx/sites-enabled/appointments
+          state: link
+
+      - name: Remove default ngix site
+        file:
+          path: /etc/nginx/sites-enabled/default
+          state: absent
+
+      - name: restart nginx
+        service:
+          name: nginx
+          state: restarted
+
+      - name: create systemd service for backend
+        copy:
+          dest: /etc/systemd/system/appointments-backend.service
+          content: |
+            [Unit]
+            Description=Appointments Backend Service
+            After=network.target mysql.service
+
+            [Service]
+            Type=simple
+            User=root
+            WorkingDirectory={{ project_dir }}/backend
+            ExecStart=/usr/bin/java -jar {{ project_dir }}/backend/target/appointments-0.0.1-SNAPSHOT.jar
+            Restart=on-failure
+
+            [Install]
+            WantedBy=multi-user.target
+
+      - name: Reload systemd
+        systemd:
+          daemon_reload: yes
+
+      - name: Start backend service
+        service:
+          name: appointments-backend
+          state: restarted
+          enabled: yes
+
+      - name: Print deployment status
+        debug:
+          msg: "VM Deployment completed! Access at http://localhost"

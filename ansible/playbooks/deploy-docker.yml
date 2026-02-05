@@ -1,0 +1,69 @@
+---
+- name: Deploy Appointments system with docker compose
+  hosts: docker_hosts
+  become: yes
+  gather_facts: yes
+
+  vars:
+    project_dir: /appointments-project
+
+  tasks:
+  - name: Check if docker is installed
+    command: docker --version
+    register: docker_check
+    ignore_errors: yes
+    changed_when: false
+
+  - name: Print docker status
+    debug:
+      msg: "Docker is {{ 'installed' if docker_check.rc == 0 else 'not installed' }}"
+
+  - name: Create project directory
+    file:
+      path: "{{ project_dir }}"
+      state: directory
+      mode: '0755'
+
+  - name: Copy docker-compose.yml
+    copy:
+      src: "{{ playbook_dir }}/../../docker-compose.yml"
+      dest: "{{ project_dir }}/docker-compose.yml"
+      mode: '0644'
+
+
+  - name: Copy backend files
+    copy:
+      src: "{{ playbook_dir }}/../../appointments/"
+      dest: "{{ project_dir }}/appointments/"
+      mode: '0755'
+
+  - name: Copy frontend files
+    copy:
+      src: "{{ playbook_dir }}/../../frontend/"
+      dest: "{{ project_dir }}/frontend/"
+      mode: '0755'
+
+  - name: Stop existing containers
+    command: docker compose down
+    args:
+      chdir: "{{ project_dir }}"
+    ignore_errors: yes
+
+  - name: Deploy with docker compose
+    command: docker compose up -d --build
+    args:
+      chdir: "{{ project_dir }}"
+
+  - name: wait for service to be ready
+    wait_for:
+      port: "{{ item }}"
+      host: localhost
+      timeout: 300
+    loop:
+      - 8080
+      - 3000
+      - 3307
+
+  - name: print deployment status
+    debug:
+      msg: "Deployment completed! access at http://localhost:3000"

@@ -36,17 +36,17 @@ pipeline {
         stage('Build Docker Images') {
             steps {
                 echo 'Building Docker images...'
-                sh 'docker compose build'
+                sh 'docker-compose build'
             }
         }
         
         stage('Deploy') {
             steps {
                 echo 'Deploying with Docker Compose...'
-                sh 'docker compose down || true'
-                sh 'docker compose up -d'
+                sh 'docker-compose down || true'
+                sh 'docker-compose up -d'
                 sh 'sleep 10'
-                sh 'docker compose ps'
+                sh 'docker-compose ps'
             }
         }
     }
